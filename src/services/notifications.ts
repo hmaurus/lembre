@@ -1,0 +1,95 @@
+import Constants from 'expo-constants';
+import * as Device from 'expo-device';
+import { Platform } from 'react-native';
+import { AlertType } from '../types/alarm';
+import { calculateIntervalSeconds } from '../constants/alarm';
+
+// expo-notifications was removed from Expo Go in SDK 53.
+// Detect Expo Go and skip loading entirely to avoid the error.
+const isExpoGo = Constants.appOwnership === 'expo';
+
+let Notifications: typeof import('expo-notifications') | null = null;
+if (!isExpoGo) {
+  Notifications = require('expo-notifications');
+}
+
+const CHANNEL_ID = 'lembrei-alarms';
+
+export function setupNotificationHandler(): void {
+  if (!Notifications) return;
+
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
+
+export async function requestPermissions(): Promise<boolean> {
+  if (!Notifications) return true; // Allow toggle in Expo Go (no-op)
+  if (!Device.isDevice) return false;
+
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  if (existing === 'granted') return true;
+
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === 'granted';
+}
+
+async function setupAndroidChannel(alertType: AlertType): Promise<void> {
+  if (!Notifications || Platform.OS !== 'android') return;
+
+  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+    name: 'Alarmes Lembrei!',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: alertType === 'som' ? 'alarm.wav' : undefined,
+    vibrationPattern: alertType === 'vibração' ? [0, 250, 250, 250] : undefined,
+    enableVibrate: alertType === 'vibração',
+  });
+}
+
+export async function scheduleRecurringNotification(
+  hours: number,
+  minutes: number,
+  alertType: AlertType,
+): Promise<string> {
+  await cancelAllNotifications();
+
+  if (!Notifications) return 'expo-go-stub';
+
+  await setupAndroidChannel(alertType);
+
+  const intervalSeconds = calculateIntervalSeconds(hours, minutes);
+
+  const id = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Lembrei!',
+      body: formatIntervalText(hours, minutes),
+      sound: alertType === 'som' ? 'alarm.wav' : undefined,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: intervalSeconds,
+      repeats: true,
+      channelId: CHANNEL_ID,
+    },
+  });
+
+  return id;
+}
+
+export async function cancelAllNotifications(): Promise<void> {
+  if (!Notifications) return;
+  await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
+function formatIntervalText(hours: number, minutes: number): string {
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}min`);
+  return `Já se passaram ${parts.join(' ')}!`;
+}
