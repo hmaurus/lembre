@@ -99,7 +99,7 @@ export default function HomeScreen() {
               accessible={false}
             />
             <Text style={styles.title} maxFontSizeMultiplier={1.3}>
-              Me lembra
+              Lembre!
             </Text>
           </View>
           <View style={styles.subtitlePill}>
